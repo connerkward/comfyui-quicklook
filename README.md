@@ -16,6 +16,8 @@ Non-ComfyUI files are passed straight to Preview.app.
 | TIFF | XMP tag (700) — reads `cfl:workflow`, `cfl:prompt`, `cfl:models`, `cfl:layers` |
 | WEBP | XMP block |
 
+> TIFF XMP metadata is written by **[comfyui-save-image-xmp](https://github.com/connerkward/comfyui-save-image-xmp)** — a ComfyUI custom node that embeds workflow JSON, model hashes, layer names, and prompt into the TIFF's XMP block.
+
 ---
 
 ## Requirements
