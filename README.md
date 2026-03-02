@@ -1,4 +1,4 @@
-# ComfyQL
+# comfy-viewer
 
 ![ComfyQL](screenshots/comfyql.png)
 
@@ -13,10 +13,10 @@ Non-ComfyUI files are passed straight to Preview.app.
 | Format | Metadata source |
 |---|---|
 | PNG | `workflow` / `prompt` tEXt chunks |
-| TIFF | XMP tag (700) — reads `cfl:workflow`, `cfl:prompt`, `cfl:models`, `cfl:layers` |
+| TIFF | XMP tag — `cfl:workflow`, `cfl:prompt`, `cfl:models`, `cfl:layers` |
 | WEBP | XMP block |
 
-> TIFF XMP metadata is written by **[comfyui-save-image-xmp](https://github.com/connerkward/comfyui-save-image-xmp)** — a ComfyUI custom node that embeds workflow JSON, model hashes, layer names, and prompt into the TIFF's XMP block.
+**PNG** shows the embedded workflow graph and prompt. For richer output — named layers, model SHA256 hashes, arbitrary JSON metadata, and layer preview cycling — use the **[ComfyUI-SaveLayeredImage](https://github.com/connerkward/comfyui-save-image-xmp)** nodes which write layered TIFFs with full XMP provenance burned in.
 
 ---
 
@@ -28,8 +28,8 @@ Non-ComfyUI files are passed straight to Preview.app.
 ## Install
 
 ```bash
-git clone https://github.com/connerkward/comfyui-quicklook.git
-cd comfyui-quicklook
+git clone https://github.com/connerkward/comfy-viewer.git
+cd comfy-viewer
 make install
 ```
 
