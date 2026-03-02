@@ -1,15 +1,20 @@
-GEN_SRCS     = Sources/XMPParser.swift Sources/WebPReader.swift Sources/PNGReader.swift Sources/HTMLRenderer.swift Sources/Generator.swift Sources/GeneratorPlugin.c
-APP_SRCS     = Sources/AppMain.swift
+GEN_SRCS     = Sources/XMPParser.swift Sources/WebPReader.swift Sources/PNGReader.swift Sources/TIFFReader.swift Sources/HTMLRenderer.swift Sources/Generator.swift Sources/GeneratorPlugin.c
+EXT_SRCS     = Sources/XMPParser.swift Sources/WebPReader.swift Sources/PNGReader.swift Sources/TIFFReader.swift Sources/HTMLRenderer.swift Sources/PreviewViewController.swift
+APP_SRCS     = Sources/main.swift Sources/AppMain.swift Sources/XMPParser.swift Sources/WebPReader.swift Sources/PNGReader.swift Sources/TIFFReader.swift Sources/HTMLRenderer.swift
 APP          = ComfyQL.app
 APP_MACOS    = $(APP)/Contents/MacOS
 APP_QLDIR    = $(APP)/Contents/Library/QuickLook
+APP_PLUGINS  = $(APP)/Contents/PlugIns
 GEN          = ComfyQL.qlgenerator
 GEN_MACOS    = $(GEN)/Contents/MacOS
 GEN_BIN      = $(GEN_MACOS)/ComfyQL
 APP_BIN      = $(APP_MACOS)/ComfyQL
+EXT          = ComfyQLExt.appex
+EXT_MACOS    = $(EXT)/Contents/MacOS
+EXT_BIN      = $(EXT_MACOS)/ComfyQLExt
 TARGET       = arm64-apple-macosx13.0
 SIGN_ID      = Developer ID Application: Conner Ward (N4YGB5B92K)
-INSTALL_DIR  = $(HOME)/Applications
+INSTALL_DIR  = /Applications
 COMFY_OUT    = $(HOME)/dev/ComfyUI-Desktop/output
 LSREGISTER   = /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
@@ -17,8 +22,9 @@ NOTARY_PROFILE = comfyql
 
 .PHONY: all notarize install uninstall test clean
 
-all: $(GEN_BIN) $(APP_BIN) assemble
-	codesign --force --sign "$(SIGN_ID)" --options runtime $(APP_QLDIR)/$(GEN)
+all: $(GEN_BIN) $(EXT_BIN) $(APP_BIN) assemble
+	codesign --force --sign "$(SIGN_ID)" --options runtime --entitlements entitlements-ext.plist $(APP_QLDIR)/$(GEN)
+	codesign --force --sign "$(SIGN_ID)" --options runtime --entitlements entitlements-ext.plist $(APP_PLUGINS)/$(EXT)
 	codesign --force --sign "$(SIGN_ID)" --options runtime $(APP)
 
 $(GEN_BIN): $(GEN_SRCS)
@@ -31,6 +37,21 @@ $(GEN_BIN): $(GEN_SRCS)
 		-framework QuickLook \
 		-framework Foundation \
 		-framework AppKit \
+		-framework ImageIO \
+		-target $(TARGET)
+
+$(EXT_BIN): $(EXT_SRCS)
+	@mkdir -p $(EXT_MACOS)
+	swiftc $(EXT_SRCS) \
+		-module-name ComfyQLExt \
+		-parse-as-library \
+		-o $(EXT_BIN) \
+		-Xlinker -e -Xlinker _NSExtensionMain \
+		-framework Quartz \
+		-framework WebKit \
+		-framework Foundation \
+		-framework AppKit \
+		-framework ImageIO \
 		-target $(TARGET)
 
 $(APP_BIN): $(APP_SRCS)
@@ -38,11 +59,15 @@ $(APP_BIN): $(APP_SRCS)
 	swiftc $(APP_SRCS) \
 		-o $(APP_BIN) \
 		-framework AppKit \
+		-framework WebKit \
+		-framework Foundation \
+		-framework ImageIO \
 		-target $(TARGET)
 
 assemble:
-	@mkdir -p $(APP_QLDIR)
+	@mkdir -p $(APP_QLDIR) $(APP_PLUGINS)
 	cp -R $(GEN) $(APP_QLDIR)/
+	cp -R $(EXT) $(APP_PLUGINS)/
 
 notarize: all
 	@echo "Zipping for notarization..."
@@ -57,9 +82,8 @@ notarize: all
 	@echo "Notarized. Now run: make install"
 
 install:
-	@mkdir -p $(INSTALL_DIR)
-	rm -rf $(INSTALL_DIR)/$(APP)
-	cp -R $(APP) $(INSTALL_DIR)/
+	sudo rm -rf $(INSTALL_DIR)/$(APP)
+	sudo cp -R $(APP) $(INSTALL_DIR)/
 	$(LSREGISTER) -f $(INSTALL_DIR)/$(APP)
 	qlmanage -r
 	@sleep 2
@@ -80,5 +104,5 @@ test:
 	qlmanage -p "$$PNG"
 
 clean:
-	rm -f $(GEN_BIN) $(APP_BIN)
-	rm -rf $(APP_QLDIR)/$(GEN)
+	rm -f $(GEN_BIN) $(EXT_BIN) $(APP_BIN)
+	rm -rf $(APP_QLDIR)/$(GEN) $(APP_PLUGINS)/$(EXT)

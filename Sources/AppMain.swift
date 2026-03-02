@@ -1,70 +1,143 @@
 import AppKit
 import WebKit
+import UniformTypeIdentifiers
 
-// Global strong reference so the delegate isn't released while app.run() blocks
-private var _appDelegate: AppDelegate?
+private func appDbg(_ msg: String) {
+    let line = "\(Date()): \(msg)\n"
+    if let data = line.data(using: .utf8) {
+        if let fh = FileHandle(forWritingAtPath: "/tmp/comfyql_app.log") {
+            fh.seekToEndOfFile(); fh.write(data); fh.closeFile()
+        } else {
+            try? data.write(to: URL(fileURLWithPath: "/tmp/comfyql_app.log"))
+        }
+    }
+    NSLog("ComfyQL: %@", msg)
+}
 
-@main
-struct ComfyQL {
-    static func main() {
-        let app = NSApplication.shared
-        app.setActivationPolicy(.regular)
-        _appDelegate = AppDelegate()
-        app.delegate = _appDelegate
-        app.run()
+// @objc name must match NSDocumentClass in Info.plist exactly
+@objc(ImageDocument)
+class ImageDocument: NSDocument {
+    override func read(from data: Data, ofType typeName: String) throws {}
+    override func makeWindowControllers() {
+        appDbg("makeWindowControllers called for \(fileURL?.lastPathComponent ?? "nil")")
+        guard let url = fileURL else { return }
+        (NSApp.delegate as? AppDelegate)?.openURLPublic(url)
     }
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate {
-    private var windows: [ViewerWindowController] = []
+class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
+    var window: NSWindow?
+    var webView: WKWebView?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Handle direct CLI invocation: ComfyQL /path/to/file.png
+        appDbg("applicationDidFinishLaunching")
+        let win = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1280, height: 840),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        win.title = "tiffTool"
+        win.center()
+        win.setFrameAutosaveName("ComfyQLMain")
+
+        let cfg = WKWebViewConfiguration()
+        cfg.userContentController.add(self, name: "comfydownload")
+        let wv = WKWebView(frame: win.contentView!.bounds, configuration: cfg)
+        wv.autoresizingMask = [.width, .height]
+        win.contentView!.addSubview(wv)
+        win.makeKeyAndOrderFront(nil)
+        self.window = win
+        self.webView = wv
+        appDbg("window created and shown, args=\(CommandLine.arguments.count)")
+
+        // Handle CLI argument (drag-to-app or shell usage)
         if CommandLine.arguments.count > 1 {
-            let url = URL(fileURLWithPath: CommandLine.arguments[1])
-            openFile(url: url)
-            if windows.isEmpty { NSApp.terminate(nil) }
+            openURLPublic(URL(fileURLWithPath: CommandLine.arguments[1]))
+        } else {
+            showWelcome()
         }
     }
 
-    // Called by Finder "Open With" and drag-to-dock-icon
-    func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls { openFile(url: url) }
-        if windows.isEmpty { NSApp.terminate(nil) }
-    }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
-    func openFile(url: URL) {
-        guard let data = try? Data(contentsOf: url),
-              let chunks = PNGChunkReader.readTextChunks(from: data) else {
-            // Not a ComfyUI PNG — pass to system default (Preview.app)
-            NSWorkspace.shared.open(url)
-            return
+    func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "comfydownload", let json = message.body as? String else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "workflow.json"
+        panel.allowedContentTypes = [UTType.json]
+        panel.beginSheetModal(for: window!) { response in
+            guard response == .OK, let url = panel.url else { return }
+            try? json.write(to: url, atomically: true, encoding: .utf8)
         }
-        let html = HTMLRenderer.generateHTML(imageData: data, chunks: chunks)
-        let wc = ViewerWindowController(html: html, title: url.lastPathComponent)
-        wc.showWindow(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        windows.append(wc)
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        return true
-    }
-}
+    // MARK: - Core
 
-class ViewerWindowController: NSWindowController {
-    init(html: Data, title: String) {
-        let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1400, height: 900))
-        webView.autoresizingMask = [.width, .height]
-        let vc = NSViewController()
-        vc.view = webView
-        let w = NSWindow(contentViewController: vc)
-        w.title = title
-        w.setContentSize(NSSize(width: 1400, height: 900))
-        w.center()
-        w.styleMask = [.titled, .closable, .resizable, .miniaturizable]
-        super.init(window: w)
-        webView.loadHTMLString(String(data: html, encoding: .utf8) ?? "", baseURL: nil)
+    func openURLPublic(_ url: URL) {
+        window?.title = url.lastPathComponent
+        guard let data = try? Data(contentsOf: url) else {
+            showHTML("<p style='color:#c00'>Could not read file.</p>"); return
+        }
+
+        let ext = url.pathExtension.lowercased()
+        let html: Data
+
+        if ext == "tiff" || ext == "tif" {
+            let pages = TIFFReader.extractAllPagesPNG(from: data)
+            guard !pages.isEmpty else {
+                showHTML("<p style='color:#c00'>Could not render TIFF preview.</p>"); return
+            }
+            guard let xmp = TIFFReader.extractXMP(from: data) else {
+                showImageFallback(data: pages[0], mime: "image/png"); return
+            }
+            let layerNames = xmp.layers.map { $0.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) } } ?? []
+            html = HTMLRenderer.generateTIFFHTML(pages: pages, layerNames: layerNames, xmp: xmp)
+        } else if ext == "webp" {
+            guard let xmp = WebPReader.extractXMP(from: data) else {
+                showImageFallback(data: data, mime: "image/webp"); return
+            }
+            html = HTMLRenderer.generateHTML(imageData: data, chunks: [:], xmp: xmp, imageMIME: "image/webp")
+        } else {
+            guard let chunks = PNGChunkReader.readTextChunks(from: data) else {
+                showImageFallback(data: data, mime: "image/png"); return
+            }
+            let xmp = chunks["XML:com.adobe.xmp"].flatMap { XMPParser.parse(string: $0) }
+            html = HTMLRenderer.generateHTML(imageData: data, chunks: chunks, xmp: xmp)
+        }
+
+        webView?.loadHTMLString(String(data: html, encoding: .utf8) ?? "", baseURL: nil)
     }
-    required init?(coder: NSCoder) { fatalError() }
+
+    private func showImageFallback(data: Data, mime: String) {
+        let b64 = data.base64EncodedString()
+        showHTML("""
+            <div style='display:flex;align-items:center;justify-content:center;
+                        height:100vh;background:#111'>
+              <img src='data:\(mime);base64,\(b64)'
+                   style='max-width:100%;max-height:100vh;object-fit:contain'>
+            </div>
+            """)
+    }
+
+    private func showWelcome() {
+        showHTML("""
+            <div style='font-family:system-ui;padding:60px;color:#555;max-width:600px;margin:0 auto'>
+              <h2 style='color:#222'>tiffTool</h2>
+              <p>Drag a ComfyUI PNG, WebP, or TIFF file here, or use
+                 <strong>Finder → right-click → Open With → tiffTool</strong>.</p>
+              <p style='color:#999;font-size:13px'>
+                Files without ComfyUI workflow metadata are shown as plain images.</p>
+            </div>
+            """)
+    }
+
+    private func showHTML(_ body: String) {
+        let page = """
+            <!DOCTYPE html><html><body style='margin:0;font-family:system-ui'>
+            \(body)
+            </body></html>
+            """
+        webView?.loadHTMLString(page, baseURL: nil)
+    }
 }

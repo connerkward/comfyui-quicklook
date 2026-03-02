@@ -5,6 +5,8 @@ struct ComfyXMP {
     var prompt: String?
     var models: String?
     var extra: String?
+    var author: String?
+    var layers: String?
 }
 
 private class XMPParserDelegate: NSObject, XMLParserDelegate {
@@ -34,6 +36,8 @@ private class XMPParserDelegate: NSObject, XMLParserDelegate {
         case "prompt":   result.prompt   = currentText
         case "models":   result.models   = currentText
         case "extra":    result.extra    = currentText
+        case "author":   result.author   = currentText
+        case "layers":   result.layers   = currentText
         default: break
         }
         currentElement = nil

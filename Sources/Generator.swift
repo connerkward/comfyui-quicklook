@@ -31,7 +31,20 @@ public func GeneratePreviewForURL(
     let html: Data
     let ext = fileURL.pathExtension.lowercased()
 
-    if ext == "webp" {
+    if ext == "tiff" || ext == "tif" {
+        guard let xmp = TIFFReader.extractXMP(from: data) else {
+            dbg("no ComfyUI XMP in TIFF → unimpErr")
+            return OSStatus(unimpErr)
+        }
+        let pages = TIFFReader.extractAllPagesPNG(from: data)
+        guard !pages.isEmpty else {
+            dbg("TIFF page extraction failed → unimpErr")
+            return OSStatus(unimpErr)
+        }
+        dbg("TIFF \(pages.count) pages found, generating HTML")
+        let layerNames = xmp.layers.map { $0.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) } } ?? []
+        html = HTMLRenderer.generateTIFFHTML(pages: pages, layerNames: layerNames, xmp: xmp)
+    } else if ext == "webp" {
         guard let xmp = WebPReader.extractXMP(from: data) else {
             dbg("no XMP in WebP → unimpErr (fallback to native)")
             return OSStatus(unimpErr)

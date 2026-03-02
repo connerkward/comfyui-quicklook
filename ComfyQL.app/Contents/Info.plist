@@ -5,9 +5,9 @@
 	<key>CFBundleIdentifier</key>
 	<string>com.connerkward.ComfyQL</string>
 	<key>CFBundleName</key>
-	<string>ComfyQL</string>
+	<string>tiffTool</string>
 	<key>CFBundleDisplayName</key>
-	<string>ComfyQL</string>
+	<string>tiffTool</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>CFBundleShortVersionString</key>
@@ -35,6 +35,36 @@
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
 			<string>Alternate</string>
+			<key>NSDocumentClass</key>
+			<string>ImageDocument</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>WebP Image</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>org.webmproject.webp</string>
+			</array>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>NSDocumentClass</key>
+			<string>ImageDocument</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>TIFF Image</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.tiff</string>
+			</array>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>NSDocumentClass</key>
+			<string>ImageDocument</string>
 		</dict>
 	</array>
 </dict>

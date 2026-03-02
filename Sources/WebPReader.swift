@@ -10,7 +10,7 @@ enum WebPReader {
         while offset + 8 <= data.count {
             let fourCC = String(bytes: data[offset..<offset+4], encoding: .ascii) ?? ""
             let chunkSize = data[offset+4..<offset+8].withUnsafeBytes {
-                Int($0.load(as: UInt32.self).littleEndian)
+                Int($0.loadUnaligned(as: UInt32.self).littleEndian)
             }
             offset += 8
             guard offset + chunkSize <= data.count else { break }
