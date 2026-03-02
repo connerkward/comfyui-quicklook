@@ -51,7 +51,7 @@ struct PNGChunkReader {
             offset = dataEnd + 4 // skip CRC
         }
 
-        let relevant = result.filter { k, _ in k == "workflow" || k == "prompt" }
+        let relevant = result.filter { k, _ in k == "workflow" || k == "prompt" || k == "XML:com.adobe.xmp" }
         return relevant.isEmpty ? nil : relevant
     }
 }

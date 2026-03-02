@@ -11,9 +11,9 @@ struct WorkflowSummary {
 
 struct HTMLRenderer {
 
-    static func generateHTML(imageData: Data, chunks: [String: String]) -> Data {
+    static func generateHTML(imageData: Data, chunks: [String: String], xmp: ComfyXMP? = nil, imageMIME: String = "image/png") -> Data {
         let b64 = imageData.base64EncodedString()
-        let workflowJSON = chunks["workflow"] ?? chunks["prompt"] ?? "{}"
+        let workflowJSON = chunks["workflow"] ?? chunks["prompt"] ?? xmp?.workflow ?? xmp?.prompt ?? "{}"
         let summary = extractSummary(from: workflowJSON)
         let summaryHTML = buildSummaryHTML(summary)
         let prettyJSON = prettyPrint(workflowJSON)
@@ -47,12 +47,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;displ
 </head>
 <body>
 <div class="img-pane">
-  <img src="data:image/png;base64,\(b64)">
+  <img src="data:\(imageMIME);base64,\(b64)">
 </div>
 <div class="panel">
   <div class="tabs">
     <button class="tab-btn active" onclick="show('sum',this)">Summary</button>
     <button class="tab-btn" onclick="show('json',this)">Workflow JSON</button>
+    \(xmp != nil ? "<button class=\"tab-btn\" onclick=\"show('xmp',this)\">XMP</button>" : "")
   </div>
   <div id="sum" class="tab-content active">
     \(summaryHTML)
@@ -60,6 +61,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;displ
   <div id="json" class="tab-content">
     <pre class="json-pre">\(prettyJSON)</pre>
   </div>
+  \(xmp.map { buildXMPTab($0) } ?? "")
 </div>
 <script>
 function show(id,btn){
@@ -136,5 +138,45 @@ function show(id,btn){
               let pretty = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]),
               let str = String(data: pretty, encoding: .utf8) else { return escapeHTML(json) }
         return escapeHTML(str)
+    }
+
+    private static func buildXMPTab(_ xmp: ComfyXMP) -> String {
+        var html = "<div id='xmp' class='tab-content'>"
+
+        // Models table
+        if let modelsJSON = xmp.models,
+           let data = modelsJSON.data(using: .utf8),
+           let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]], !arr.isEmpty {
+            html += "<div class='kv-key' style='margin-bottom:8px'>Models</div>"
+            html += "<table style='width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px'>"
+            html += "<tr><th style='text-align:left;padding:4px 8px;border-bottom:1px solid #3a3a3c;color:#8e8e93'>Name</th>"
+            html += "<th style='text-align:left;padding:4px 8px;border-bottom:1px solid #3a3a3c;color:#8e8e93'>SHA256</th></tr>"
+            for entry in arr {
+                let name = escapeHTML(entry["name"] as? String ?? "")
+                let hash = entry["sha256"] as? String ?? ""
+                let shortHash = hash.count > 12 ? String(hash.prefix(12)) + "..." : escapeHTML(hash)
+                html += "<tr><td style='padding:4px 8px;border-bottom:1px solid #3a3a3c;color:#f2f2f7'>\(name)</td>"
+                html += "<td style='padding:4px 8px;border-bottom:1px solid #3a3a3c;color:#8e8e93;font-family:\"SF Mono\",Menlo,Monaco,monospace'>\(shortHash)</td></tr>"
+            }
+            html += "</table>"
+        }
+
+        // Extra metadata
+        if let extra = xmp.extra, !extra.isEmpty {
+            html += "<div class='kv-key' style='margin-bottom:8px'>Extra</div>"
+            let prettyExtra: String
+            if let data = extra.data(using: .utf8),
+               let obj = try? JSONSerialization.jsonObject(with: data),
+               let pretty = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]),
+               let str = String(data: pretty, encoding: .utf8) {
+                prettyExtra = escapeHTML(str)
+            } else {
+                prettyExtra = escapeHTML(extra)
+            }
+            html += "<pre class='json-pre'>\(prettyExtra)</pre>"
+        }
+
+        html += "</div>"
+        return html
     }
 }
