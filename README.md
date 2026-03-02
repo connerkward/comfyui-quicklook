@@ -1,4 +1,4 @@
-# comfy-viewer
+# ComfyUI Metadata Viewer
 
 ![ComfyQL](screenshots/comfyql.png)
 
