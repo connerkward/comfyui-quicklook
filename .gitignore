@@ -1,0 +1,13 @@
+ComfyQL.app/Contents/MacOS/
+ComfyQL.app/Contents/Library/
+ComfyQL.app/Contents/PlugIns/
+ComfyQL.app/Contents/_CodeSignature/
+ComfyQL.qlgenerator/
+ComfyQLExt.appex/
+Sources/Generator.swift
+Sources/GeneratorPlugin.c
+Sources/PreviewViewController.swift
+exports.lds
+screenshots/
+*.o
+*.d
