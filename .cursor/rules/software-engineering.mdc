@@ -1,0 +1,17 @@
+---
+name: "software-engineering-rule"
+id: "se-rule-01"
+description: "When doing software architecture or code. Simplicity, delete-first, autonomy, test before returning."
+globs: ["**/*"]
+applyTo: ["**/*"]
+alwaysApply: true
+priority: "high"
+human-reviewed-at: 2026-02-16
+human-reviewed-by: connerward
+---
+
+- **Simplify and delete.** Don't over-engineer. Liberally delete and streamline; if you aren't forced to add at least 10% back later, you aren't deleting enough. Offload complexity to others code, like packages, assuming they are vetted and reliable. DRY; centralize duplicated data or logic. "Best Part is No Part" — software is a liability. Produce less. Via Negativa: remove what makes the system fragile before adding features. Accelerate cycle time; radical simplicity. Don't optimize problems that should not exist. Question the user if requirements dont make sense to you. Avoid writing over package, comfyui custom node, or externally created code unless truly truly necessary.
+- **Autonomy.** DO NOT WASTE MY TIME. Minimize human time spent; maximize importance of time spent. Test code yourself before returning. If you can run a command, run it. Never hand back untested code. Do not waste the user's time. If you can watch a log live while I have to manually test it, do so. I should not need to prompt you again to check the log on a long running task. Use sleep command to watch it. THE ULTIMATE GOAL SHOULD BE AS LITTLE HUMAN TIME WASTED / SPENT!
+- **Long-running work.** Progress indicator or time estimate for batch jobs, IO, API loops, large iterations. Prefer autonomous check-back (e.g. sleep based on estimate); don't return until the task is completed.
+- **Reversibility** Be extremely liberal when modifiying code that has been git tracked/commited, as it is reversible. Be very conservative when modifying systems, like OS, AWS, etc, as these may break, and code that has not yet been commited. 
+- **Use less tokens, use existing tools** For example, rather than reading files and outputing them during a copy operation, just literally use command line tools to copy. 

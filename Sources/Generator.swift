@@ -32,33 +32,34 @@ public func GeneratePreviewForURL(
     let ext = fileURL.pathExtension.lowercased()
 
     if ext == "tiff" || ext == "tif" {
-        guard let xmp = TIFFReader.extractXMP(from: data) else {
-            dbg("no ComfyUI XMP in TIFF → unimpErr")
-            return OSStatus(unimpErr)
-        }
         let pages = TIFFReader.extractAllPagesPNG(from: data)
         guard !pages.isEmpty else {
             dbg("TIFF page extraction failed → unimpErr")
             return OSStatus(unimpErr)
         }
+        guard let parseResult = TIFFReader.extractXMPParseResult(from: data), parseResult.comfy != nil else {
+            dbg("no ComfyUI XMP in TIFF → unimpErr")
+            return OSStatus(unimpErr)
+        }
         dbg("TIFF \(pages.count) pages found, generating HTML")
-        let layerNames = xmp.layers.map { $0.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) } } ?? []
-        html = HTMLRenderer.generateTIFFHTML(pages: pages, layerNames: layerNames, xmp: xmp)
+        let layerNames: [String] = parseResult.comfy?.layers.map { $0.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) } } ?? []
+        let layerInfos = TIFFReader.extractPerLayerMetadata(from: data)
+        html = HTMLRenderer.generateTIFFHTML(pages: pages, layerNames: layerNames, parseResult: parseResult, totalFileSize: data.count, layerInfos: layerInfos)
     } else if ext == "webp" {
-        guard let xmp = WebPReader.extractXMP(from: data) else {
+        guard let parseResult = WebPReader.extractXMPParseResult(from: data), parseResult.comfy != nil else {
             dbg("no XMP in WebP → unimpErr (fallback to native)")
             return OSStatus(unimpErr)
         }
         dbg("WebP XMP found, generating HTML")
-        html = HTMLRenderer.generateHTML(imageData: data, chunks: [:], xmp: xmp, imageMIME: "image/webp")
+        html = HTMLRenderer.generateHTML(imageData: data, chunks: [:], xmp: parseResult.comfy, allXMPEntries: parseResult.allEntries, imageMIME: "image/webp")
     } else {
         guard let chunks = PNGChunkReader.readTextChunks(from: data) else {
             dbg("no workflow chunks → unimpErr (fallback to native)")
             return OSStatus(unimpErr)
         }
         dbg("PNG chunks found, generating HTML")
-        let xmp = chunks["XML:com.adobe.xmp"].flatMap { XMPParser.parse(string: $0) }
-        html = HTMLRenderer.generateHTML(imageData: data, chunks: chunks, xmp: xmp)
+        let parseResult = chunks["XML:com.adobe.xmp"].map { XMPParser.parseFull(string: $0) } ?? XMPParseResult(comfy: nil, allEntries: [])
+        html = HTMLRenderer.generateHTML(imageData: data, chunks: chunks, xmp: parseResult.comfy, allXMPEntries: parseResult.allEntries)
     }
     let props: [CFString: Any] = [
         kQLPreviewPropertyTextEncodingNameKey: "UTF-8" as CFString,

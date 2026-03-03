@@ -1,0 +1,14 @@
+---
+description: Install macOS apps to main Applications folder; always install after build
+alwaysApply: true
+---
+
+# Install to main Applications folder
+
+When building, installing, or copying a macOS app (e.g. `.app` bundles):
+
+- **Always** use the **main** Applications folder: `/Applications`
+- **Never** use the user Applications folder: `~/Applications`
+- **Always build and install after finishing code gen**: When you finish generating or changing code for an app in this project, run the full build and install (e.g. `make` or build the app, then `make install`). Do not leave the user to build or install manually.
+
+Use `sudo` if required to copy into `/Applications`. Keep the project’s install target (e.g. Makefile `INSTALL_DIR`) set to `/Applications`.

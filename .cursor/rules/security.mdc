@@ -1,0 +1,15 @@
+---
+name: "security-rule"
+id: "sec-rule-01"
+description: "Global security law."
+globs: ["**/*"]
+applyTo: ["**/*"]
+alwaysApply: true
+priority: "high"
+human-reviewed-at: 2026-02-16
+human-reviewed-by: connerward
+---
+
+# Invariants (Always True)
+- Do not leak keys, passwords env files, especially in commit or logs
+- Do not use raw text passwords in terminal or places where it could be captured by logs.

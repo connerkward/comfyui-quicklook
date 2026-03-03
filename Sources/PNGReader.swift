@@ -3,6 +3,16 @@ import Foundation
 struct PNGChunkReader {
     private static let pngSignature: [UInt8] = [137, 80, 78, 71, 13, 10, 26, 10]
 
+    /// Width and height from IHDR chunk (big-endian). Returns nil if not a valid PNG or IHDR missing.
+    static func dimensions(from data: Data) -> (width: Int, height: Int)? {
+        let bytes = [UInt8](data)
+        guard bytes.count >= 24, bytes.prefix(8).elementsEqual(pngSignature) else { return nil }
+        guard String(bytes: bytes[12..<16], encoding: .ascii) == "IHDR" else { return nil }
+        let w = Int(bytes[16]) << 24 | Int(bytes[17]) << 16 | Int(bytes[18]) << 8 | Int(bytes[19])
+        let h = Int(bytes[20]) << 24 | Int(bytes[21]) << 16 | Int(bytes[22]) << 8 | Int(bytes[23])
+        return (w, h)
+    }
+
     static func readTextChunks(from data: Data) -> [String: String]? {
         let bytes = [UInt8](data)
         guard bytes.count > 8, bytes.prefix(8).elementsEqual(pngSignature) else { return nil }

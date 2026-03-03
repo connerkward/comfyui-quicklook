@@ -1,6 +1,7 @@
 import AppKit
 import WebKit
 import UniformTypeIdentifiers
+import ImageIO
 
 private func appDbg(_ msg: String) {
     let line = "\(Date()): \(msg)\n"
@@ -21,16 +22,24 @@ class ImageDocument: NSDocument {
     override func makeWindowControllers() {
         appDbg("makeWindowControllers called for \(fileURL?.lastPathComponent ?? "nil")")
         guard let url = fileURL else { return }
-        (NSApp.delegate as? AppDelegate)?.openURLPublic(url)
+        if let del = NSApp.delegate as? AppDelegate {
+            del.openURLPublic(url)
+            del.window?.makeKeyAndOrderFront(nil)
+        }
     }
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
     var window: NSWindow?
     var webView: WKWebView?
+    /// File to open once the window exists (e.g. when opened via "Open With" before launch finished)
+    private var pendingURL: URL?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         appDbg("applicationDidFinishLaunching")
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        setupMainMenu()
         let win = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1280, height: 840),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -51,8 +60,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
         self.webView = wv
         appDbg("window created and shown, args=\(CommandLine.arguments.count)")
 
-        // Handle CLI argument (drag-to-app or shell usage)
-        if CommandLine.arguments.count > 1 {
+        // Handle CLI argument (drag-to-app or shell usage) or pending "Open With" file
+        if let url = pendingURL {
+            pendingURL = nil
+            openURLPublic(url)
+        } else if CommandLine.arguments.count > 1 {
             openURLPublic(URL(fileURLWithPath: CommandLine.arguments[1]))
         } else {
             showWelcome()
@@ -60,6 +72,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    /// Handle "Open With" from Finder (file may be delivered here instead of via document)
+    func application(_ sender: NSApplication, openFile filename: String) -> Bool {
+        appDbg("application(openFile:) \(filename)")
+        let url = URL(fileURLWithPath: filename)
+        if window != nil {
+            openURLPublic(url)
+            window?.makeKeyAndOrderFront(nil)
+        } else {
+            pendingURL = url
+        }
+        return true
+    }
 
     func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.name == "comfydownload", let json = message.body as? String else { return }
@@ -70,6 +95,39 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
             guard response == .OK, let url = panel.url else { return }
             try? json.write(to: url, atomically: true, encoding: .utf8)
         }
+    }
+
+    // MARK: - Menu
+
+    private func setupMainMenu() {
+        let mainMenu = NSMenu()
+
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "About ComfyQL", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Hide ComfyQL", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        let hideOthers = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Quit ComfyQL", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+
+        let editMenuItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+
+        NSApp.mainMenu = mainMenu
     }
 
     // MARK: - Core
@@ -88,34 +146,54 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
             guard !pages.isEmpty else {
                 showHTML("<p style='color:#c00'>Could not render TIFF preview.</p>"); return
             }
-            guard let xmp = TIFFReader.extractXMP(from: data) else {
-                showImageFallback(data: pages[0], mime: "image/png"); return
-            }
-            let layerNames = xmp.layers.map { $0.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) } } ?? []
-            html = HTMLRenderer.generateTIFFHTML(pages: pages, layerNames: layerNames, xmp: xmp)
+            let parseResult = TIFFReader.extractXMPParseResult(from: data) ?? XMPParseResult(comfy: nil, allEntries: [])
+            let layerInfos = TIFFReader.extractPerLayerMetadata(from: data)
+            let xmpLayerNames: [String] = parseResult.comfy?.layers.map { $0.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) } } ?? []
+            let tagPageNames = layerInfos.compactMap(\.pageName)
+            let layerNames = xmpLayerNames.isEmpty ? tagPageNames : xmpLayerNames
+            html = HTMLRenderer.generateTIFFHTML(pages: pages, layerNames: layerNames, parseResult: parseResult, totalFileSize: data.count, layerInfos: layerInfos)
         } else if ext == "webp" {
-            guard let xmp = WebPReader.extractXMP(from: data) else {
-                showImageFallback(data: data, mime: "image/webp"); return
-            }
-            html = HTMLRenderer.generateHTML(imageData: data, chunks: [:], xmp: xmp, imageMIME: "image/webp")
+            let parseResult = WebPReader.extractXMPParseResult(from: data) ?? XMPParseResult(comfy: nil, allEntries: [])
+            let imageInfo = Self.imageLayerInfo(from: data)
+            html = HTMLRenderer.generateHTML(imageData: data, chunks: [:], xmp: parseResult.comfy, allXMPEntries: parseResult.allEntries, totalFileSize: data.count, imageLayerInfo: imageInfo, imageMIME: "image/webp")
         } else {
             guard let chunks = PNGChunkReader.readTextChunks(from: data) else {
                 showImageFallback(data: data, mime: "image/png"); return
             }
-            let xmp = chunks["XML:com.adobe.xmp"].flatMap { XMPParser.parse(string: $0) }
-            html = HTMLRenderer.generateHTML(imageData: data, chunks: chunks, xmp: xmp)
+            let xmpString = chunks["XML:com.adobe.xmp"]
+            let parseResult = xmpString.map { XMPParser.parseFull(string: $0) } ?? XMPParseResult(comfy: nil, allEntries: [])
+            let xmp = parseResult.comfy
+            let imageInfo = PNGChunkReader.dimensions(from: data).map { LayerFileInfo(width: $0.width, height: $0.height, byteSize: 0, compression: "Deflate") }
+            html = HTMLRenderer.generateHTML(imageData: data, chunks: chunks, xmp: xmp, allXMPEntries: parseResult.allEntries, totalFileSize: data.count, imageLayerInfo: imageInfo)
         }
 
         webView?.loadHTMLString(String(data: html, encoding: .utf8) ?? "", baseURL: nil)
     }
 
+    /// Single-image dimensions for WebP (or any ImageIO-supported format) for File & layers row.
+    private static func imageLayerInfo(from data: Data) -> LayerFileInfo? {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceGetCount(src) > 0,
+              let cgImage = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
+        return LayerFileInfo(width: cgImage.width, height: cgImage.height, byteSize: 0, compression: "VP8")
+    }
+
     private func showImageFallback(data: Data, mime: String) {
         let b64 = data.base64EncodedString()
         showHTML("""
-            <div style='display:flex;align-items:center;justify-content:center;
-                        height:100vh;background:#111'>
-              <img src='data:\(mime);base64,\(b64)'
-                   style='max-width:100%;max-height:100vh;object-fit:contain'>
+            <style>
+            *{box-sizing:border-box;margin:0;padding:0}
+            html,body{width:100%;max-width:100%;height:100vh;overflow:hidden}
+            body{font-family:-apple-system,sans-serif;display:flex;background:#1c1c1e;color:#f2f2f7}
+            .img-pane{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#000}
+            .img-pane img{max-width:100%;max-height:100%;object-fit:contain}
+            .panel{flex:0 0 340px;min-width:340px;background:#2c2c2e;border-left:1px solid #3a3a3c;padding:20px;overflow-y:auto}
+            .panel p{color:#8e8e93;font-size:13px;line-height:1.5}
+            </style>
+            <div class="img-pane"><img src='data:\(mime);base64,\(b64)'></div>
+            <div class="panel">
+              <p><strong>No ComfyUI metadata</strong></p>
+              <p style="margin-top:12px">This image has no embedded workflow, prompt, or XMP. Use ComfyUI's Save (e.g. Save Image) to embed metadata.</p>
             </div>
             """)
     }

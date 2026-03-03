@@ -1,0 +1,14 @@
+---
+name: "project-management-rule"
+id: "pm-rule-01"
+description: "Task and project control. Linear is the dashboard for agent work; load the Linear skill for workflow, labels, and testing policy."
+globs: ["**/*"]
+applyTo: ["**/*"]
+alwaysApply: false
+priority: "high"
+human-reviewed-at: 2026-02-16
+human-reviewed-by: connerward
+---
+
+- **Control plane:** Linear is the unified dashboard for agent tasks across machines. Find work, claim, execute, test, report, close there.
+- **Mechanics and policy:** When doing Linear work, load [skills/linear/SKILL.md](../../skills/linear/SKILL.md) (workflow, labels, testing requirements).

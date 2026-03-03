@@ -4,42 +4,64 @@ struct ComfyXMP {
     var workflow: String?
     var prompt: String?
     var models: String?
-    var extra: String?
-    var author: String?
+    var json: String?
     var layers: String?
+}
+
+/// One XMP element: namespace URI, local name, text value.
+struct XMPEntry: Encodable {
+    let ns: String
+    let name: String
+    let value: String
+}
+
+/// Result of parsing XMP: ComfyUI fields (if any) plus every element with text for "All XMP" tab.
+struct XMPParseResult {
+    var comfy: ComfyXMP?
+    var allEntries: [XMPEntry]
 }
 
 private class XMPParserDelegate: NSObject, XMLParserDelegate {
     var result = ComfyXMP()
+    var allEntries: [XMPEntry] = []
+    private var currentNamespace: String?
     private var currentElement: String?
     private var currentText = ""
-    private let cflNS = "http://ns.conward.io/comfyui/1.0/"
+    private static let comfyElementNames: Set<String> = ["workflow", "prompt", "models", "json", "layers"]
 
     func parser(_ parser: XMLParser, didStartElement elementName: String,
                 namespaceURI: String?, qualifiedName qName: String?,
                 attributes attributeDict: [String: String] = [:]) {
-        if namespaceURI == cflNS {
-            currentElement = elementName
-            currentText = ""
-        }
+        currentNamespace = namespaceURI
+        currentElement = elementName
+        currentText = ""
     }
 
     func parser(_ parser: XMLParser, foundCharacters string: String) {
-        if currentElement != nil { currentText += string }
+        currentText += string
     }
 
     func parser(_ parser: XMLParser, didEndElement elementName: String,
                 namespaceURI: String?, qualifiedName qName: String?) {
-        guard namespaceURI == cflNS, let el = currentElement, el == elementName else { return }
-        switch el {
-        case "workflow": result.workflow = currentText
-        case "prompt":   result.prompt   = currentText
-        case "models":   result.models   = currentText
-        case "extra":    result.extra    = currentText
-        case "author":   result.author   = currentText
-        case "layers":   result.layers   = currentText
-        default: break
+        let text = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty {
+            allEntries.append(XMPEntry(
+                ns: namespaceURI ?? "",
+                name: elementName,
+                value: text
+            ))
         }
+        if Self.comfyElementNames.contains(elementName) {
+            switch elementName {
+            case "workflow": result.workflow = currentText
+            case "prompt":   result.prompt   = currentText
+            case "models":   result.models   = currentText
+            case "json":     result.json     = currentText
+            case "layers":   result.layers   = currentText
+            default: break
+            }
+        }
+        currentNamespace = nil
         currentElement = nil
         currentText = ""
     }
@@ -47,19 +69,30 @@ private class XMPParserDelegate: NSObject, XMLParserDelegate {
 
 enum XMPParser {
     static func parse(string: String) -> ComfyXMP? {
-        guard let data = string.data(using: .utf8) else { return nil }
-        return parse(data: data)
+        parseFull(string: string).comfy
     }
 
     static func parse(data: Data) -> ComfyXMP? {
+        parseFull(data: data).comfy
+    }
+
+    /// Parse XMP and return both ComfyUI fields and all elements (for ComfyUI tab + All XMP tab).
+    static func parseFull(string: String) -> XMPParseResult {
+        guard let data = string.data(using: .utf8) else { return XMPParseResult(comfy: nil, allEntries: []) }
+        return parseFull(data: data)
+    }
+
+    static func parseFull(data: Data) -> XMPParseResult {
         let delegate = XMPParserDelegate()
         let parser = XMLParser(data: data)
         parser.delegate = delegate
         parser.shouldProcessNamespaces = true
-        guard parser.parse() else { return nil }
-        let r = delegate.result
-        // Return nil if no cfl fields found (not our XMP)
-        guard r.workflow != nil || r.prompt != nil || r.models != nil || r.extra != nil else { return nil }
-        return r
+        _ = parser.parse()
+        let comfy: ComfyXMP? = {
+            let r = delegate.result
+            guard r.workflow != nil || r.prompt != nil || r.models != nil || r.json != nil else { return nil }
+            return r
+        }()
+        return XMPParseResult(comfy: comfy, allEntries: delegate.allEntries)
     }
 }

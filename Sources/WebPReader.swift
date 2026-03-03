@@ -2,6 +2,10 @@ import Foundation
 
 enum WebPReader {
     static func extractXMP(from data: Data) -> ComfyXMP? {
+        extractXMPParseResult(from: data)?.comfy
+    }
+
+    static func extractXMPParseResult(from data: Data) -> XMPParseResult? {
         guard data.count > 12 else { return nil }
         guard String(bytes: data[0..<4], encoding: .ascii) == "RIFF",
               String(bytes: data[8..<12], encoding: .ascii) == "WEBP" else { return nil }
@@ -17,7 +21,7 @@ enum WebPReader {
 
             if fourCC == "XMP " {
                 let xmpData = data[offset..<offset+chunkSize]
-                return XMPParser.parse(data: xmpData)
+                return XMPParser.parseFull(data: xmpData)
             }
 
             offset += chunkSize + (chunkSize & 1)  // pad to even
